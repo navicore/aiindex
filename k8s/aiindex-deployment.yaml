@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aiindex-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiindex
+  labels:
+    app: aiindex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiindex
+  template:
+    metadata:
+      labels:
+        app: aiindex
+    spec:
+      containers:
+        - name: aiindex
+          image: ghcr.io/navicore/aiindex:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: FINNHUB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aiindex-secrets
+                  key: FINNHUB_API_KEY
+            - name: DATABASE_URL
+              value: "sqlite:/data/aiindex.db"
+            - name: RUST_LOG
+              value: "info"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aiindex-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiindex
+spec:
+  selector:
+    app: aiindex
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

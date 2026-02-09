@@ -26,6 +26,7 @@ pub async fn compute_and_store(
             "SELECT price, market_cap FROM prices
              WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1",
         )
+        .bind(sym)
         .fetch_optional(pool)
         .await
         .ok()
@@ -34,6 +35,7 @@ pub async fn compute_and_store(
         let base = sqlx::query_as::<_, (f64,)>(
             "SELECT price FROM base_prices WHERE symbol = ?",
         )
+        .bind(sym)
         .fetch_optional(pool)
         .await
         .ok()

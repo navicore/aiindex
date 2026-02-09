@@ -20,6 +20,7 @@ pub struct FinnhubProfile {
 
 /// A price record stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct PriceRecord {
     pub symbol: String,
     pub price: f64,
@@ -40,6 +41,7 @@ pub struct IndexSnapshot {
 
 /// Base price for a stock, used in index calculation.
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct BasePrice {
     pub symbol: String,
     pub price: f64,

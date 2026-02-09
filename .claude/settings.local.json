@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:finnhub.io)"
+      "WebFetch(domain:finnhub.io)",
+      "Bash(npm install:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }
