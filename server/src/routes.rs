@@ -50,12 +50,14 @@ pub async fn get_index_history(
 
     let snapshots: Vec<IndexSnapshot> = rows
         .into_iter()
-        .map(|(value, daily_change, daily_change_pct, timestamp)| IndexSnapshot {
-            value,
-            daily_change,
-            daily_change_pct,
-            timestamp,
-        })
+        .map(
+            |(value, daily_change, daily_change_pct, timestamp)| IndexSnapshot {
+                value,
+                daily_change,
+                daily_change_pct,
+                timestamp,
+            },
+        )
         .collect();
 
     Json(snapshots)
@@ -177,11 +179,7 @@ pub async fn get_sectors(State(state): State<AppState>) -> Json<Vec<SectorSummar
     let mut sectors = Vec::new();
 
     for (key, sector) in &state.config.sectors {
-        let total_weight: f64 = sector
-            .symbols
-            .iter()
-            .filter_map(|s| weights.get(s))
-            .sum();
+        let total_weight: f64 = sector.symbols.iter().filter_map(|s| weights.get(s)).sum();
 
         let mut changes = Vec::new();
         for sym in &sector.symbols {

@@ -15,8 +15,7 @@ use tower_http::services::ServeDir;
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -27,16 +26,15 @@ async fn main() {
         cfg.all_symbols().len()
     );
 
-    let pool = db::init_pool().await.expect("Failed to initialize database");
+    let pool = db::init_pool()
+        .await
+        .expect("Failed to initialize database");
     let config = Arc::new(cfg);
 
     // Spawn background fetcher.
     fetcher::spawn(pool.clone(), config.clone());
 
-    let state = AppState {
-        pool,
-        config,
-    };
+    let state = AppState { pool, config };
 
     let api = Router::new()
         .route("/api/health", axum::routing::get(routes::health))
@@ -46,7 +44,10 @@ async fn main() {
             axum::routing::get(routes::get_index_history),
         )
         .route("/api/stocks", axum::routing::get(routes::get_stocks))
-        .route("/api/stocks/{symbol}", axum::routing::get(routes::get_stock))
+        .route(
+            "/api/stocks/{symbol}",
+            axum::routing::get(routes::get_stock),
+        )
         .route("/api/sectors", axum::routing::get(routes::get_sectors))
         .route("/api/config", axum::routing::get(routes::get_config))
         .with_state(state);

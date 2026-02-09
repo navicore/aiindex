@@ -32,14 +32,12 @@ pub async fn compute_and_store(
         .ok()
         .flatten();
 
-        let base = sqlx::query_as::<_, (f64,)>(
-            "SELECT price FROM base_prices WHERE symbol = ?",
-        )
-        .bind(sym)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let base = sqlx::query_as::<_, (f64,)>("SELECT price FROM base_prices WHERE symbol = ?")
+            .bind(sym)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
         if let (Some((current_price, mcap_opt)), Some((base_price,))) = (latest, base) {
             if base_price > 0.0 && current_price > 0.0 {

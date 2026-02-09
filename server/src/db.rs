@@ -2,8 +2,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 
 pub async fn init_pool() -> Result<SqlitePool, sqlx::Error> {
-    let db_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:aiindex.db".to_string());
+    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:aiindex.db".to_string());
 
     let options = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
 
@@ -26,11 +25,9 @@ pub async fn init_pool() -> Result<SqlitePool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_prices_symbol_ts ON prices(symbol, timestamp)",
-    )
-    .execute(&pool)
-    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_prices_symbol_ts ON prices(symbol, timestamp)")
+        .execute(&pool)
+        .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS index_snapshots (
