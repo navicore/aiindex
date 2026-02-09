@@ -65,7 +65,6 @@ pub async fn get_stocks(State(state): State<AppState>) -> Json<Vec<StockDetail>>
     let mut stocks = Vec::new();
 
     // Compute weights for display.
-    let index_symbols = state.config.index_symbols();
     let weights = compute_weights(&state.pool, &state.config).await;
 
     for (sector_key, sector) in &state.config.sectors {
