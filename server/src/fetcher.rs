@@ -129,23 +129,44 @@ async fn fetch_all_profiles(
     let symbols = config.all_symbols();
     tracing::info!("Fetching profiles for {} symbols", symbols.len());
 
+    let now = Utc::now().to_rfc3339();
     for symbol in &symbols {
         match fetch_profile(client, api_key, symbol).await {
             Ok(p) => {
                 if let Some(mcap) = p.market_capitalization {
                     // Update the most recent price row for this symbol with market cap.
-                    if let Err(e) = sqlx::query(
+                    let _ = sqlx::query(
                         "UPDATE prices SET market_cap = ?
                          WHERE id = (SELECT id FROM prices WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1)",
                     )
                     .bind(mcap)
                     .bind(symbol)
                     .execute(pool)
-                    .await
-                    {
-                        tracing::error!("{}: failed to update market_cap: {}", symbol, e);
-                    }
+                    .await;
                 }
+                // Store profile info.
+                let _ = sqlx::query(
+                    "INSERT INTO stock_profiles (symbol, name, exchange, industry, weburl, logo, country, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(symbol) DO UPDATE SET
+                       name = excluded.name,
+                       exchange = excluded.exchange,
+                       industry = excluded.industry,
+                       weburl = excluded.weburl,
+                       logo = excluded.logo,
+                       country = excluded.country,
+                       updated_at = excluded.updated_at",
+                )
+                .bind(symbol)
+                .bind(&p.name)
+                .bind(&p.exchange)
+                .bind(&p.finnhub_industry)
+                .bind(&p.weburl)
+                .bind(&p.logo)
+                .bind(&p.country)
+                .bind(&now)
+                .execute(pool)
+                .await;
             }
             Err(e) => {
                 tracing::error!("{}: profile fetch failed: {}", symbol, e);

@@ -11,9 +11,16 @@ pub struct FinnhubQuote {
     pub dp: Option<f64>,
 }
 
-/// Finnhub company profile response (for market cap).
+/// Finnhub company profile response.
 #[derive(Debug, Deserialize)]
 pub struct FinnhubProfile {
+    pub name: Option<String>,
+    pub exchange: Option<String>,
+    #[serde(rename = "finnhubIndustry")]
+    pub finnhub_industry: Option<String>,
+    pub weburl: Option<String>,
+    pub logo: Option<String>,
+    pub country: Option<String>,
     #[serde(rename = "marketCapitalization")]
     pub market_capitalization: Option<f64>,
 }
@@ -60,6 +67,12 @@ pub struct StockDetail {
     pub market_cap: Option<f64>,
     pub weight: Option<f64>,
     pub timestamp: String,
+    pub name: Option<String>,
+    pub exchange: Option<String>,
+    pub industry: Option<String>,
+    pub weburl: Option<String>,
+    pub logo: Option<String>,
+    pub country: Option<String>,
 }
 
 /// Sector summary returned by the API.

@@ -3,6 +3,7 @@
 
   let sortKey = $state('symbol');
   let sortDir = $state(1); // 1 = asc, -1 = desc
+  let expanded = $state(null); // symbol of expanded row
 
   function sort(key) {
     if (sortKey === key) {
@@ -11,6 +12,10 @@
       sortKey = key;
       sortDir = key === 'symbol' || key === 'sector_label' ? 1 : -1;
     }
+  }
+
+  function toggle(symbol) {
+    expanded = expanded === symbol ? null : symbol;
   }
 
   let sorted = $derived.by(() => {
@@ -73,7 +78,7 @@
     </thead>
     <tbody>
       {#each sorted as stock (stock.symbol)}
-        <tr>
+        <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)}>
           <td class="symbol">{stock.symbol}</td>
           <td class="sector">{stock.sector_label}</td>
           <td>${fmt(stock.price)}</td>
@@ -83,6 +88,35 @@
           <td>{fmtMcap(stock.market_cap)}</td>
           <td>{fmtWeight(stock.weight)}</td>
         </tr>
+        {#if expanded === stock.symbol}
+          <tr class="detail-row">
+            <td colspan="6">
+              <div class="detail-panel">
+                <div class="detail-header">
+                  {#if stock.logo}
+                    <img src={stock.logo} alt="" class="detail-logo" />
+                  {/if}
+                  <div>
+                    <div class="detail-name">{stock.name || stock.symbol}</div>
+                    <div class="detail-meta">
+                      {#if stock.exchange}{stock.exchange}{/if}
+                      {#if stock.exchange && stock.industry} &middot; {/if}
+                      {#if stock.industry}{stock.industry}{/if}
+                      {#if stock.country} &middot; {stock.country}{/if}
+                    </div>
+                  </div>
+                </div>
+                <div class="detail-links">
+                  {#if stock.weburl}
+                    <a href={stock.weburl} target="_blank" rel="noopener">Company Website</a>
+                  {/if}
+                  <a href="https://finance.yahoo.com/quote/{stock.symbol}" target="_blank" rel="noopener">Yahoo Finance</a>
+                  <a href="https://www.google.com/finance/quote/{stock.symbol}:NASDAQ" target="_blank" rel="noopener">Google Finance</a>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {/if}
       {/each}
     </tbody>
   </table>
@@ -113,7 +147,69 @@
     font-size: 0.8rem;
   }
 
-  tr:hover td {
+  .stock-row {
+    cursor: pointer;
+  }
+
+  .stock-row:hover td {
     background: rgba(0, 212, 255, 0.05);
+  }
+
+  .expanded-row td {
+    border-bottom: none;
+  }
+
+  .detail-row td {
+    padding: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .detail-panel {
+    background: var(--bg-primary);
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .detail-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    object-fit: contain;
+    background: #fff;
+  }
+
+  .detail-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  .detail-meta {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-top: 0.1rem;
+  }
+
+  .detail-links {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .detail-links a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.8rem;
+  }
+
+  .detail-links a:hover {
+    text-decoration: underline;
   }
 </style>

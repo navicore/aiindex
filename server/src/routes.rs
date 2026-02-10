@@ -82,6 +82,8 @@ pub async fn get_stocks(State(state): State<AppState>) -> Json<Vec<StockDetail>>
             .flatten();
 
             if let Some((price, change, change_pct, market_cap, timestamp)) = latest {
+                let (name, exchange, industry, weburl, logo, country) =
+                    get_profile(&state.pool, sym).await;
                 stocks.push(StockDetail {
                     symbol: sym.clone(),
                     sector: sector_key.clone(),
@@ -92,6 +94,12 @@ pub async fn get_stocks(State(state): State<AppState>) -> Json<Vec<StockDetail>>
                     market_cap,
                     weight: weights.get(sym).copied(),
                     timestamp,
+                    name,
+                    exchange,
+                    industry,
+                    weburl,
+                    logo,
+                    country,
                 });
             }
         }
@@ -110,6 +118,8 @@ pub async fn get_stocks(State(state): State<AppState>) -> Json<Vec<StockDetail>>
         .flatten();
 
         if let Some((price, change, change_pct, market_cap, timestamp)) = latest {
+            let (name, exchange, industry, weburl, logo, country) =
+                get_profile(&state.pool, sym).await;
             stocks.push(StockDetail {
                 symbol: sym.clone(),
                 sector: "benchmarks".to_string(),
@@ -120,6 +130,12 @@ pub async fn get_stocks(State(state): State<AppState>) -> Json<Vec<StockDetail>>
                 market_cap,
                 weight: None,
                 timestamp,
+                name,
+                exchange,
+                industry,
+                weburl,
+                logo,
+                country,
             });
         }
     }
@@ -161,6 +177,8 @@ pub async fn get_stock(
     let weights = compute_weights(&state.pool, &state.config).await;
     let (price, change, change_pct, market_cap, timestamp) = latest;
 
+    let (name, exchange, industry, weburl, logo, country) = get_profile(&state.pool, &sym).await;
+
     Ok(Json(StockDetail {
         symbol: sym.clone(),
         sector: sector_key,
@@ -171,6 +189,12 @@ pub async fn get_stock(
         market_cap,
         weight: weights.get(&sym).copied(),
         timestamp,
+        name,
+        exchange,
+        industry,
+        weburl,
+        logo,
+        country,
     }))
 }
 
@@ -223,6 +247,29 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigInfo> {
         index_stock_count: state.config.index_symbols().len(),
         benchmark_symbols: state.config.benchmarks.symbols.clone(),
     })
+}
+
+/// Look up cached profile info for a symbol.
+async fn get_profile(
+    pool: &SqlitePool,
+    symbol: &str,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    sqlx::query_as::<_, (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)>(
+        "SELECT name, exchange, industry, weburl, logo, country FROM stock_profiles WHERE symbol = ?",
+    )
+    .bind(symbol)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_default()
 }
 
 /// Compute blended weights for all index symbols.

@@ -51,6 +51,21 @@ pub async fn init_pool() -> Result<SqlitePool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS stock_profiles (
+            symbol TEXT PRIMARY KEY,
+            name TEXT,
+            exchange TEXT,
+            industry TEXT,
+            weburl TEXT,
+            logo TEXT,
+            country TEXT,
+            updated_at TEXT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     tracing::info!("Database initialized");
     Ok(pool)
 }
