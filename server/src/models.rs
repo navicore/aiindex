@@ -25,6 +25,17 @@ pub struct FinnhubProfile {
     pub market_capitalization: Option<f64>,
 }
 
+/// Finnhub candle (historical) response.
+#[derive(Debug, Deserialize)]
+pub struct FinnhubCandle {
+    /// Close prices
+    pub c: Option<Vec<f64>>,
+    /// Timestamps (unix seconds)
+    pub t: Option<Vec<i64>>,
+    /// Status ("ok" or "no_data")
+    pub s: String,
+}
+
 /// A price record stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]

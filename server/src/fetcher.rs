@@ -1,7 +1,7 @@
 use crate::config::StocksConfig;
 use crate::index;
-use crate::models::{FinnhubProfile, FinnhubQuote};
-use chrono::Utc;
+use crate::models::{FinnhubCandle, FinnhubProfile, FinnhubQuote};
+use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::time::{self, Duration};
@@ -34,6 +34,9 @@ async fn quote_loop(pool: SqlitePool, config: Arc<StocksConfig>) {
 
     // On first run, fetch profiles before quotes so market_cap is available.
     fetch_all_profiles(&client, &api_key, &pool, &config).await;
+
+    // Backfill historical data if the database is fresh.
+    backfill_history(&client, &api_key, &pool, &config).await;
 
     loop {
         fetch_all_quotes(&client, &api_key, &pool, &config).await;
@@ -205,4 +208,232 @@ async fn fetch_profile(
         .await?
         .json::<FinnhubProfile>()
         .await
+}
+
+async fn fetch_candle(
+    client: &reqwest::Client,
+    api_key: &str,
+    symbol: &str,
+    from: i64,
+    to: i64,
+) -> Result<FinnhubCandle, reqwest::Error> {
+    let url = format!(
+        "https://finnhub.io/api/v1/stock/candle?symbol={}&resolution=D&from={}&to={}&token={}",
+        symbol, from, to, api_key
+    );
+    client.get(&url).send().await?.json::<FinnhubCandle>().await
+}
+
+/// Backfill ~1 year of daily history if the database has no historical data.
+async fn backfill_history(
+    client: &reqwest::Client,
+    api_key: &str,
+    pool: &SqlitePool,
+    config: &StocksConfig,
+) {
+    // Check if we already have substantial data.
+    let count = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM prices")
+        .fetch_one(pool)
+        .await
+        .map(|(c,)| c)
+        .unwrap_or(0);
+
+    if count > 100 {
+        tracing::info!("Database has {} price rows, skipping backfill", count);
+        return;
+    }
+
+    tracing::info!("Backfilling historical data...");
+
+    let now = Utc::now();
+    let one_year_ago = now - chrono::Duration::days(365);
+    let from_ts = one_year_ago.timestamp();
+    let to_ts = now.timestamp();
+
+    let symbols = config.all_symbols();
+
+    // Fetch candles for all symbols.
+    for symbol in &symbols {
+        match fetch_candle(client, api_key, symbol, from_ts, to_ts).await {
+            Ok(candle) => {
+                if candle.s != "ok" {
+                    tracing::warn!("{}: no candle data (status={})", symbol, candle.s);
+                    continue;
+                }
+                let closes = candle.c.unwrap_or_default();
+                let timestamps = candle.t.unwrap_or_default();
+
+                if closes.is_empty() {
+                    continue;
+                }
+
+                // Set base price from earliest close.
+                let _ = sqlx::query(
+                    "INSERT OR IGNORE INTO base_prices (symbol, price, recorded_at)
+                     VALUES (?, ?, ?)",
+                )
+                .bind(symbol)
+                .bind(closes[0])
+                .bind(DateTime::from_timestamp(timestamps[0], 0)
+                    .unwrap_or(now)
+                    .to_rfc3339())
+                .execute(pool)
+                .await;
+
+                // Look up current market_cap for this symbol to attach to rows.
+                let mcap = sqlx::query_as::<_, (Option<f64>,)>(
+                    "SELECT market_cap FROM prices WHERE symbol = ? AND market_cap IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
+                )
+                .bind(symbol)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(m,)| m);
+
+                // Insert daily closes.
+                for (i, (price, ts)) in closes.iter().zip(timestamps.iter()).enumerate() {
+                    let dt = DateTime::from_timestamp(*ts, 0)
+                        .unwrap_or(now)
+                        .to_rfc3339();
+
+                    // Compute daily change from previous close.
+                    let (change, change_pct) = if i > 0 && closes[i - 1] > 0.0 {
+                        let chg = price - closes[i - 1];
+                        let pct = (chg / closes[i - 1]) * 100.0;
+                        (Some(chg), Some(pct))
+                    } else {
+                        (None, None)
+                    };
+
+                    let _ = sqlx::query(
+                        "INSERT INTO prices (symbol, price, change, change_pct, market_cap, timestamp)
+                         VALUES (?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(symbol)
+                    .bind(price)
+                    .bind(change)
+                    .bind(change_pct)
+                    .bind(mcap)
+                    .bind(&dt)
+                    .execute(pool)
+                    .await;
+                }
+                tracing::info!("{}: backfilled {} daily candles", symbol, closes.len());
+            }
+            Err(e) => {
+                tracing::error!("{}: candle fetch failed: {}", symbol, e);
+            }
+        }
+        time::sleep(CALL_SPACING).await;
+    }
+
+    // Compute historical index snapshots from backfilled data.
+    tracing::info!("Computing historical index snapshots...");
+    let dates = sqlx::query_as::<_, (String,)>(
+        "SELECT DISTINCT DATE(timestamp) as d FROM prices ORDER BY d",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    for (date_str,) in &dates {
+        // For each date, compute the index from that day's closing prices.
+        let index_symbols = config.index_symbols();
+        let mcap_pct = config.mcap_pct();
+        let base_value = config.settings.base_value;
+        let n = index_symbols.len() as f64;
+        if n == 0.0 {
+            continue;
+        }
+
+        let mut entries: Vec<(f64, f64, f64)> = Vec::new();
+
+        for sym in &index_symbols {
+            let latest = sqlx::query_as::<_, (f64, Option<f64>)>(
+                "SELECT price, market_cap FROM prices
+                 WHERE symbol = ? AND DATE(timestamp) <= ?
+                 ORDER BY timestamp DESC LIMIT 1",
+            )
+            .bind(sym)
+            .bind(date_str)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            let base = sqlx::query_as::<_, (f64,)>(
+                "SELECT price FROM base_prices WHERE symbol = ?",
+            )
+            .bind(sym)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let (Some((current_price, mcap_opt)), Some((base_price,))) = (latest, base) {
+                if base_price > 0.0 && current_price > 0.0 {
+                    let mcap = mcap_opt.unwrap_or(1.0);
+                    entries.push((current_price, base_price, mcap));
+                }
+            }
+        }
+
+        if entries.is_empty() {
+            continue;
+        }
+
+        let total_mcap: f64 = entries.iter().map(|(_, _, m)| m).sum();
+        let equal_weight = 1.0 / entries.len() as f64;
+
+        let mut index_value = 0.0;
+        for (current, base, mcap) in &entries {
+            let mcap_weight = if total_mcap > 0.0 {
+                mcap / total_mcap
+            } else {
+                equal_weight
+            };
+            let blended = (mcap_pct * mcap_weight) + ((1.0 - mcap_pct) * equal_weight);
+            index_value += blended * (current / base);
+        }
+        index_value *= base_value;
+
+        // Get previous snapshot for daily change.
+        let prev = sqlx::query_as::<_, (f64,)>(
+            "SELECT value FROM index_snapshots WHERE DATE(timestamp) < ? ORDER BY timestamp DESC LIMIT 1",
+        )
+        .bind(date_str)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        let (daily_change, daily_change_pct) = if let Some((prev_val,)) = prev {
+            if prev_val > 0.0 {
+                let chg = index_value - prev_val;
+                let pct = (chg / prev_val) * 100.0;
+                (Some(chg), Some(pct))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        // Use end-of-day timestamp.
+        let snap_ts = format!("{}T16:00:00+00:00", date_str);
+
+        let _ = sqlx::query(
+            "INSERT INTO index_snapshots (value, daily_change, daily_change_pct, timestamp)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(index_value)
+        .bind(daily_change)
+        .bind(daily_change_pct)
+        .bind(&snap_ts)
+        .execute(pool)
+        .await;
+    }
+
+    tracing::info!("Backfill complete: {} trading days", dates.len());
 }
