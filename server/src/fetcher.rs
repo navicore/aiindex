@@ -274,9 +274,11 @@ async fn backfill_history(
                 )
                 .bind(symbol)
                 .bind(closes[0])
-                .bind(DateTime::from_timestamp(timestamps[0], 0)
-                    .unwrap_or(now)
-                    .to_rfc3339())
+                .bind(
+                    DateTime::from_timestamp(timestamps[0], 0)
+                        .unwrap_or(now)
+                        .to_rfc3339(),
+                )
                 .execute(pool)
                 .await;
 
@@ -293,9 +295,7 @@ async fn backfill_history(
 
                 // Insert daily closes.
                 for (i, (price, ts)) in closes.iter().zip(timestamps.iter()).enumerate() {
-                    let dt = DateTime::from_timestamp(*ts, 0)
-                        .unwrap_or(now)
-                        .to_rfc3339();
+                    let dt = DateTime::from_timestamp(*ts, 0).unwrap_or(now).to_rfc3339();
 
                     // Compute daily change from previous close.
                     let (change, change_pct) = if i > 0 && closes[i - 1] > 0.0 {
@@ -362,14 +362,13 @@ async fn backfill_history(
             .ok()
             .flatten();
 
-            let base = sqlx::query_as::<_, (f64,)>(
-                "SELECT price FROM base_prices WHERE symbol = ?",
-            )
-            .bind(sym)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+            let base =
+                sqlx::query_as::<_, (f64,)>("SELECT price FROM base_prices WHERE symbol = ?")
+                    .bind(sym)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             if let (Some((current_price, mcap_opt)), Some((base_price,))) = (latest, base) {
                 if base_price > 0.0 && current_price > 0.0 {
