@@ -18,6 +18,8 @@ pub fn spawn(pool: SqlitePool, config: Arc<StocksConfig>) {
     });
 
     tokio::spawn(async move {
+        // Daily profile refresh (the first fetch happens in quote_loop before quotes).
+        time::sleep(PROFILE_INTERVAL).await;
         profile_loop(pool, config).await;
     });
 }
@@ -30,7 +32,9 @@ async fn quote_loop(pool: SqlitePool, config: Arc<StocksConfig>) {
         return;
     }
 
-    // Fetch immediately on startup, then every interval.
+    // On first run, fetch profiles before quotes so market_cap is available.
+    fetch_all_profiles(&client, &api_key, &pool, &config).await;
+
     loop {
         fetch_all_quotes(&client, &api_key, &pool, &config).await;
         index::compute_and_store(&pool, &config).await;
@@ -68,14 +72,26 @@ async fn fetch_all_quotes(
                     tracing::warn!("{}: price is zero, skipping", symbol);
                     continue;
                 }
+                // Carry forward last known market_cap.
+                let prev_mcap = sqlx::query_as::<_, (Option<f64>,)>(
+                    "SELECT market_cap FROM prices WHERE symbol = ? AND market_cap IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
+                )
+                .bind(symbol)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|(m,)| m);
+
                 if let Err(e) = sqlx::query(
-                    "INSERT INTO prices (symbol, price, change, change_pct, timestamp)
-                     VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO prices (symbol, price, change, change_pct, market_cap, timestamp)
+                     VALUES (?, ?, ?, ?, ?, ?)",
                 )
                 .bind(symbol)
                 .bind(q.c)
                 .bind(q.d)
                 .bind(q.dp)
+                .bind(prev_mcap)
                 .bind(&now)
                 .execute(pool)
                 .await
