@@ -1,5 +1,4 @@
 use crate::config::StocksConfig;
-use crate::index;
 use crate::models::*;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -19,9 +18,24 @@ pub async fn health() -> &'static str {
 }
 
 pub async fn get_index(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let snapshot = index::compute_and_store(&state.pool, &state.config).await;
-    match snapshot {
-        Some(s) => Json(serde_json::json!(s)),
+    let row = sqlx::query_as::<_, (f64, Option<f64>, Option<f64>, String)>(
+        "SELECT value, daily_change, daily_change_pct, timestamp
+         FROM index_snapshots ORDER BY timestamp DESC LIMIT 1",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
+
+    match row {
+        Some((value, daily_change, daily_change_pct, timestamp)) => {
+            Json(serde_json::json!(IndexSnapshot {
+                value,
+                daily_change,
+                daily_change_pct,
+                timestamp,
+            }))
+        }
         None => Json(serde_json::json!({
             "value": null,
             "message": "No data available yet"

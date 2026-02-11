@@ -20,7 +20,7 @@
         getIndex(),
         getStocks(),
         getSectors(),
-        getIndexHistory(500),
+        getIndexHistory(10000),
       ]);
       indexData = idx;
       stocks = stk;

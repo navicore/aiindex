@@ -231,15 +231,20 @@ async fn backfill_history(
     pool: &SqlitePool,
     config: &StocksConfig,
 ) {
-    // Check if we already have substantial data.
-    let count = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM prices")
-        .fetch_one(pool)
-        .await
-        .map(|(c,)| c)
-        .unwrap_or(0);
+    // Check if we already have historical data spanning more than 7 days.
+    let date_span = sqlx::query_as::<_, (i64,)>(
+        "SELECT CAST((julianday(MAX(timestamp)) - julianday(MIN(timestamp))) AS INTEGER) FROM index_snapshots",
+    )
+    .fetch_one(pool)
+    .await
+    .map(|(d,)| d)
+    .unwrap_or(0);
 
-    if count > 100 {
-        tracing::info!("Database has {} price rows, skipping backfill", count);
+    if date_span > 7 {
+        tracing::info!(
+            "Database spans {} days of history, skipping backfill",
+            date_span
+        );
         return;
     }
 

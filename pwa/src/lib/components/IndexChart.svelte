@@ -8,9 +8,11 @@
   let { history } = $props();
 
   const periods = [
-    { label: '1D', hours: 24 },
     { label: '1W', hours: 168 },
-    { label: '1M', hours: 720 },
+    { label: '1M', hours: 730 },
+    { label: '3M', hours: 2190 },
+    { label: '6M', hours: 4380 },
+    { label: '1Y', hours: 8760 },
     { label: 'All', hours: null },
   ];
   let selectedPeriod = $state('All');
@@ -24,6 +26,16 @@
     if (period?.hours) {
       const cutoff = new Date(Date.now() - period.hours * 3600_000);
       filtered = filtered.filter((d) => new Date(d.timestamp) >= cutoff);
+    }
+
+    // For periods longer than 1 week, downsample to one point per day (last of each day).
+    if (!period?.hours || period.hours > 168) {
+      const byDay = new Map();
+      for (const d of filtered) {
+        const day = d.timestamp.slice(0, 10); // YYYY-MM-DD
+        byDay.set(day, d); // last entry for each day wins
+      }
+      filtered = [...byDay.values()];
     }
 
     return filtered.map((d) => ({
