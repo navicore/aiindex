@@ -25,15 +25,31 @@ pub struct FinnhubProfile {
     pub market_capitalization: Option<f64>,
 }
 
-/// Finnhub candle (historical) response.
+/// Yahoo Finance chart response (for historical backfill).
 #[derive(Debug, Deserialize)]
-pub struct FinnhubCandle {
-    /// Close prices
-    pub c: Option<Vec<f64>>,
-    /// Timestamps (unix seconds)
-    pub t: Option<Vec<i64>>,
-    /// Status ("ok" or "no_data")
-    pub s: String,
+pub struct YahooChartResponse {
+    pub chart: YahooChart,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct YahooChart {
+    pub result: Option<Vec<YahooChartResult>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct YahooChartResult {
+    pub timestamp: Option<Vec<i64>>,
+    pub indicators: YahooIndicators,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct YahooIndicators {
+    pub quote: Vec<YahooQuote>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct YahooQuote {
+    pub close: Option<Vec<Option<f64>>>,
 }
 
 /// A price record stored in the database.

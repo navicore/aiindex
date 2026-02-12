@@ -1,6 +1,6 @@
 use crate::config::StocksConfig;
 use crate::index;
-use crate::models::{FinnhubCandle, FinnhubProfile, FinnhubQuote};
+use crate::models::{FinnhubProfile, FinnhubQuote, YahooChartResponse};
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -210,24 +210,27 @@ async fn fetch_profile(
         .await
 }
 
-async fn fetch_candle(
+async fn fetch_yahoo_chart(
     client: &reqwest::Client,
-    api_key: &str,
     symbol: &str,
-    from: i64,
-    to: i64,
-) -> Result<FinnhubCandle, reqwest::Error> {
+) -> Result<YahooChartResponse, reqwest::Error> {
     let url = format!(
-        "https://finnhub.io/api/v1/stock/candle?symbol={}&resolution=D&from={}&to={}&token={}",
-        symbol, from, to, api_key
+        "https://query1.finance.yahoo.com/v8/finance/chart/{}?range=1y&interval=1d",
+        symbol
     );
-    client.get(&url).send().await?.json::<FinnhubCandle>().await
+    client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0")
+        .send()
+        .await?
+        .json::<YahooChartResponse>()
+        .await
 }
 
 /// Backfill ~1 year of daily history if the database has no historical data.
 async fn backfill_history(
     client: &reqwest::Client,
-    api_key: &str,
+    _api_key: &str,
     pool: &SqlitePool,
     config: &StocksConfig,
 ) {
@@ -248,46 +251,53 @@ async fn backfill_history(
         return;
     }
 
-    tracing::info!("Backfilling historical data...");
+    tracing::info!("Backfilling historical data via Yahoo Finance...");
 
     let now = Utc::now();
-    let one_year_ago = now - chrono::Duration::days(365);
-    let from_ts = one_year_ago.timestamp();
-    let to_ts = now.timestamp();
-
     let symbols = config.all_symbols();
 
-    // Fetch candles for all symbols.
     for symbol in &symbols {
-        match fetch_candle(client, api_key, symbol, from_ts, to_ts).await {
-            Ok(candle) => {
-                if candle.s != "ok" {
-                    tracing::warn!("{}: no candle data (status={})", symbol, candle.s);
+        match fetch_yahoo_chart(client, symbol).await {
+            Ok(resp) => {
+                let result = match resp.chart.result.as_ref().and_then(|r| r.first()) {
+                    Some(r) => r,
+                    None => {
+                        tracing::warn!("{}: no Yahoo chart data", symbol);
+                        continue;
+                    }
+                };
+
+                let timestamps = result.timestamp.as_deref().unwrap_or_default();
+                let closes = result
+                    .indicators
+                    .quote
+                    .first()
+                    .and_then(|q| q.close.as_deref())
+                    .unwrap_or_default();
+
+                if closes.is_empty() || timestamps.is_empty() {
                     continue;
                 }
-                let closes = candle.c.unwrap_or_default();
-                let timestamps = candle.t.unwrap_or_default();
 
-                if closes.is_empty() {
-                    continue;
+                // Find first valid close for base price.
+                let first_valid = closes.iter().zip(timestamps.iter()).find(|(c, _)| c.is_some());
+                if let Some((Some(base_price), base_ts)) = first_valid {
+                    let _ = sqlx::query(
+                        "INSERT OR IGNORE INTO base_prices (symbol, price, recorded_at)
+                         VALUES (?, ?, ?)",
+                    )
+                    .bind(symbol)
+                    .bind(base_price)
+                    .bind(
+                        DateTime::from_timestamp(*base_ts, 0)
+                            .unwrap_or(now)
+                            .to_rfc3339(),
+                    )
+                    .execute(pool)
+                    .await;
                 }
 
-                // Set base price from earliest close.
-                let _ = sqlx::query(
-                    "INSERT OR IGNORE INTO base_prices (symbol, price, recorded_at)
-                     VALUES (?, ?, ?)",
-                )
-                .bind(symbol)
-                .bind(closes[0])
-                .bind(
-                    DateTime::from_timestamp(timestamps[0], 0)
-                        .unwrap_or(now)
-                        .to_rfc3339(),
-                )
-                .execute(pool)
-                .await;
-
-                // Look up current market_cap for this symbol to attach to rows.
+                // Look up current market_cap for this symbol.
                 let mcap = sqlx::query_as::<_, (Option<f64>,)>(
                     "SELECT market_cap FROM prices WHERE symbol = ? AND market_cap IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
                 )
@@ -298,17 +308,27 @@ async fn backfill_history(
                 .flatten()
                 .and_then(|(m,)| m);
 
-                // Insert daily closes.
-                for (i, (price, ts)) in closes.iter().zip(timestamps.iter()).enumerate() {
-                    let dt = DateTime::from_timestamp(*ts, 0).unwrap_or(now).to_rfc3339();
+                let mut count = 0;
+                let mut prev_close: Option<f64> = None;
+                for (close_opt, ts) in closes.iter().zip(timestamps.iter()) {
+                    let price = match close_opt {
+                        Some(p) if *p > 0.0 => *p,
+                        _ => {
+                            continue;
+                        }
+                    };
 
-                    // Compute daily change from previous close.
-                    let (change, change_pct) = if i > 0 && closes[i - 1] > 0.0 {
-                        let chg = price - closes[i - 1];
-                        let pct = (chg / closes[i - 1]) * 100.0;
-                        (Some(chg), Some(pct))
-                    } else {
-                        (None, None)
+                    let dt = DateTime::from_timestamp(*ts, 0)
+                        .unwrap_or(now)
+                        .to_rfc3339();
+
+                    let (change, change_pct) = match prev_close {
+                        Some(prev) if prev > 0.0 => {
+                            let chg = price - prev;
+                            let pct = (chg / prev) * 100.0;
+                            (Some(chg), Some(pct))
+                        }
+                        _ => (None, None),
                     };
 
                     let _ = sqlx::query(
@@ -323,14 +343,18 @@ async fn backfill_history(
                     .bind(&dt)
                     .execute(pool)
                     .await;
+
+                    prev_close = Some(price);
+                    count += 1;
                 }
-                tracing::info!("{}: backfilled {} daily candles", symbol, closes.len());
+                tracing::info!("{}: backfilled {} daily points", symbol, count);
             }
             Err(e) => {
-                tracing::error!("{}: candle fetch failed: {}", symbol, e);
+                tracing::error!("{}: Yahoo chart fetch failed: {}", symbol, e);
             }
         }
-        time::sleep(CALL_SPACING).await;
+        // Slightly longer spacing for Yahoo to be polite.
+        time::sleep(Duration::from_millis(200)).await;
     }
 
     // Compute historical index snapshots from backfilled data.
@@ -343,7 +367,6 @@ async fn backfill_history(
     .unwrap_or_default();
 
     for (date_str,) in &dates {
-        // For each date, compute the index from that day's closing prices.
         let index_symbols = config.index_symbols();
         let mcap_pct = config.mcap_pct();
         let base_value = config.settings.base_value;
@@ -402,7 +425,6 @@ async fn backfill_history(
         }
         index_value *= base_value;
 
-        // Get previous snapshot for daily change.
         let prev = sqlx::query_as::<_, (f64,)>(
             "SELECT value FROM index_snapshots WHERE DATE(timestamp) < ? ORDER BY timestamp DESC LIMIT 1",
         )
@@ -424,7 +446,6 @@ async fn backfill_history(
             (None, None)
         };
 
-        // Use end-of-day timestamp.
         let snap_ts = format!("{}T16:00:00+00:00", date_str);
 
         let _ = sqlx::query(
