@@ -280,7 +280,10 @@ async fn backfill_history(
                 }
 
                 // Find first valid close for base price.
-                let first_valid = closes.iter().zip(timestamps.iter()).find(|(c, _)| c.is_some());
+                let first_valid = closes
+                    .iter()
+                    .zip(timestamps.iter())
+                    .find(|(c, _)| c.is_some());
                 if let Some((Some(base_price), base_ts)) = first_valid {
                     let _ = sqlx::query(
                         "INSERT OR IGNORE INTO base_prices (symbol, price, recorded_at)
@@ -318,9 +321,7 @@ async fn backfill_history(
                         }
                     };
 
-                    let dt = DateTime::from_timestamp(*ts, 0)
-                        .unwrap_or(now)
-                        .to_rfc3339();
+                    let dt = DateTime::from_timestamp(*ts, 0).unwrap_or(now).to_rfc3339();
 
                     let (change, change_pct) = match prev_close {
                         Some(prev) if prev > 0.0 => {
