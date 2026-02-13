@@ -93,7 +93,7 @@
     </thead>
     <tbody>
       {#each sortedIndex as stock (stock.symbol)}
-        <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)}>
+        <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={stock.name || stock.symbol}>
           <td class="symbol">{stock.symbol}</td>
           <td class="sector">{stock.sector_label}</td>
           <td>${fmt(stock.price)}</td>
@@ -148,6 +148,7 @@
         <thead>
           <tr>
             <th>Symbol</th>
+            <th>Name</th>
             <th>Price</th>
             <th>Change</th>
             <th>Mkt Cap</th>
@@ -155,8 +156,9 @@
         </thead>
         <tbody>
           {#each sortedBenchmarks as stock (stock.symbol)}
-            <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)}>
+            <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={stock.name || stock.symbol}>
               <td class="symbol benchmark-symbol">{stock.symbol}</td>
+              <td class="bench-name">{stock.name || stock.symbol}</td>
               <td>${fmt(stock.price)}</td>
               <td class:positive={stock.change_pct >= 0} class:negative={stock.change_pct < 0}>
                 {fmtPct(stock.change_pct)}
@@ -165,7 +167,7 @@
             </tr>
             {#if expanded === stock.symbol}
               <tr class="detail-row">
-                <td colspan="4">
+                <td colspan="5">
                   <div class="detail-panel">
                     <div class="detail-header">
                       {#if stock.logo}
@@ -220,6 +222,17 @@
 
   .benchmark-symbol {
     color: var(--text-secondary);
+  }
+
+  .bench-name {
+    font-family: inherit;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-align: left;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .sector {
