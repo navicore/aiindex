@@ -65,6 +65,20 @@
     if (n == null) return '--';
     return `${(n * 100).toFixed(2)}%`;
   }
+
+  // Finnhub doesn't return useful names for ETFs, so provide fallbacks.
+  const etfNames = {
+    SPY: 'SPDR S&P 500 ETF Trust',
+    QQQ: 'Invesco QQQ Trust (Nasdaq-100)',
+    SMH: 'VanEck Semiconductor ETF',
+    BOTZ: 'Global X Robotics & Artificial Intelligence ETF',
+    AIQ: 'Global X Artificial Intelligence & Technology ETF',
+    ARKQ: 'ARK Autonomous Technology & Robotics ETF',
+  };
+
+  function displayName(stock) {
+    return stock.name || etfNames[stock.symbol] || stock.symbol;
+  }
 </script>
 
 <div class="table-wrap">
@@ -93,7 +107,7 @@
     </thead>
     <tbody>
       {#each sortedIndex as stock (stock.symbol)}
-        <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={stock.name || stock.symbol}>
+        <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={displayName(stock)}>
           <td class="symbol">{stock.symbol}</td>
           <td class="sector">{stock.sector_label}</td>
           <td>${fmt(stock.price)}</td>
@@ -112,7 +126,7 @@
                     <img src={stock.logo} alt="" class="detail-logo" />
                   {/if}
                   <div>
-                    <div class="detail-name">{stock.name || stock.symbol}</div>
+                    <div class="detail-name">{displayName(stock)}</div>
                     <div class="detail-meta">
                       {#if stock.exchange}{stock.exchange}{/if}
                       {#if stock.exchange && stock.industry} &middot; {/if}
@@ -148,7 +162,6 @@
         <thead>
           <tr>
             <th>Symbol</th>
-            <th>Name</th>
             <th>Price</th>
             <th>Change</th>
             <th>Mkt Cap</th>
@@ -156,9 +169,8 @@
         </thead>
         <tbody>
           {#each sortedBenchmarks as stock (stock.symbol)}
-            <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={stock.name || stock.symbol}>
+            <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)} title={displayName(stock)}>
               <td class="symbol benchmark-symbol">{stock.symbol}</td>
-              <td class="bench-name">{stock.name || stock.symbol}</td>
               <td>${fmt(stock.price)}</td>
               <td class:positive={stock.change_pct >= 0} class:negative={stock.change_pct < 0}>
                 {fmtPct(stock.change_pct)}
@@ -167,14 +179,14 @@
             </tr>
             {#if expanded === stock.symbol}
               <tr class="detail-row">
-                <td colspan="5">
+                <td colspan="4">
                   <div class="detail-panel">
                     <div class="detail-header">
                       {#if stock.logo}
                         <img src={stock.logo} alt="" class="detail-logo" />
                       {/if}
                       <div>
-                        <div class="detail-name">{stock.name || stock.symbol}</div>
+                        <div class="detail-name">{displayName(stock)}</div>
                         <div class="detail-meta">
                           {#if stock.exchange}{stock.exchange}{/if}
                           {#if stock.exchange && stock.industry} &middot; {/if}
@@ -222,17 +234,6 @@
 
   .benchmark-symbol {
     color: var(--text-secondary);
-  }
-
-  .bench-name {
-    font-family: inherit;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    text-align: left;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .sector {
