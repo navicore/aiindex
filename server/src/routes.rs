@@ -254,6 +254,33 @@ pub async fn get_sectors(State(state): State<AppState>) -> Json<Vec<SectorSummar
     Json(sectors)
 }
 
+pub async fn get_benchmark_history(
+    State(state): State<AppState>,
+    Query(q): Query<HistoryQuery>,
+) -> Json<std::collections::HashMap<String, Vec<BenchmarkPricePoint>>> {
+    let limit = q.limit.unwrap_or(365);
+    let mut result = std::collections::HashMap::new();
+
+    for sym in &state.config.benchmarks.symbols {
+        let rows = sqlx::query_as::<_, (f64, String)>(
+            "SELECT price, timestamp FROM prices WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?",
+        )
+        .bind(sym)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+
+        let points: Vec<BenchmarkPricePoint> = rows
+            .into_iter()
+            .map(|(price, timestamp)| BenchmarkPricePoint { price, timestamp })
+            .collect();
+        result.insert(sym.clone(), points);
+    }
+
+    Json(result)
+}
+
 pub async fn get_config(State(state): State<AppState>) -> Json<ConfigInfo> {
     Json(ConfigInfo {
         base_value: state.config.settings.base_value,

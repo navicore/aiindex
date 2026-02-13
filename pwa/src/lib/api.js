@@ -26,6 +26,10 @@ export function getSectors() {
   return fetchJson('/api/sectors');
 }
 
+export function getBenchmarkHistory(limit = 10000) {
+  return fetchJson(`/api/benchmarks/history?limit=${limit}`);
+}
+
 export function getConfig() {
   return fetchJson('/api/config');
 }

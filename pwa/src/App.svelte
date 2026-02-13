@@ -1,5 +1,5 @@
 <script>
-  import { getIndex, getStocks, getSectors, getIndexHistory } from '$lib/api.js';
+  import { getIndex, getStocks, getSectors, getIndexHistory, getBenchmarkHistory, getConfig } from '$lib/api.js';
   import IndexBanner from '$lib/components/IndexBanner.svelte';
   import IndexChart from '$lib/components/IndexChart.svelte';
   import SectorBreakdown from '$lib/components/SectorBreakdown.svelte';
@@ -9,6 +9,8 @@
   let stocks = $state([]);
   let sectors = $state([]);
   let history = $state([]);
+  let benchmarkHistory = $state({});
+  let benchmarkSymbols = $state([]);
   let loading = $state(true);
   let error = $state(null);
 
@@ -16,16 +18,20 @@
 
   async function loadData() {
     try {
-      const [idx, stk, sec, hist] = await Promise.all([
+      const [idx, stk, sec, hist, benchHist, cfg] = await Promise.all([
         getIndex(),
         getStocks(),
         getSectors(),
         getIndexHistory(10000),
+        getBenchmarkHistory(10000),
+        getConfig(),
       ]);
       indexData = idx;
       stocks = stk;
       sectors = sec;
       history = hist;
+      benchmarkHistory = benchHist;
+      benchmarkSymbols = cfg.benchmark_symbols || [];
       error = null;
     } catch (e) {
       error = e.message;
@@ -59,7 +65,7 @@
 
     <div class="chart-section card">
       <h2>Index History</h2>
-      <IndexChart {history} />
+      <IndexChart {history} {benchmarkHistory} {benchmarkSymbols} />
     </div>
 
     <div class="sectors-section card">

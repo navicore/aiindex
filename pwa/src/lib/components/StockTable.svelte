@@ -18,8 +18,23 @@
     expanded = expanded === symbol ? null : symbol;
   }
 
-  let sorted = $derived.by(() => {
-    return [...stocks].sort((a, b) => {
+  // Split into index stocks and benchmarks.
+  let indexStocks = $derived(stocks.filter((s) => s.sector !== 'benchmarks'));
+  let benchmarkStocks = $derived(stocks.filter((s) => s.sector === 'benchmarks'));
+
+  let sortedIndex = $derived.by(() => {
+    return [...indexStocks].sort((a, b) => {
+      let av = a[sortKey];
+      let bv = b[sortKey];
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
+      return (av - bv) * sortDir;
+    });
+  });
+
+  let sortedBenchmarks = $derived.by(() => {
+    return [...benchmarkStocks].sort((a, b) => {
       let av = a[sortKey];
       let bv = b[sortKey];
       if (av == null) av = -Infinity;
@@ -77,7 +92,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each sorted as stock (stock.symbol)}
+      {#each sortedIndex as stock (stock.symbol)}
         <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)}>
           <td class="symbol">{stock.symbol}</td>
           <td class="sector">{stock.sector_label}</td>
@@ -122,6 +137,68 @@
   </table>
 </div>
 
+{#if benchmarkStocks.length > 0}
+  <div class="benchmark-section">
+    <div class="benchmark-header">
+      <h3>Benchmarks</h3>
+      <span class="benchmark-note">Not included in index calculation</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Mkt Cap</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each sortedBenchmarks as stock (stock.symbol)}
+            <tr class="stock-row" class:expanded-row={expanded === stock.symbol} onclick={() => toggle(stock.symbol)}>
+              <td class="symbol benchmark-symbol">{stock.symbol}</td>
+              <td>${fmt(stock.price)}</td>
+              <td class:positive={stock.change_pct >= 0} class:negative={stock.change_pct < 0}>
+                {fmtPct(stock.change_pct)}
+              </td>
+              <td>{fmtMcap(stock.market_cap)}</td>
+            </tr>
+            {#if expanded === stock.symbol}
+              <tr class="detail-row">
+                <td colspan="4">
+                  <div class="detail-panel">
+                    <div class="detail-header">
+                      {#if stock.logo}
+                        <img src={stock.logo} alt="" class="detail-logo" />
+                      {/if}
+                      <div>
+                        <div class="detail-name">{stock.name || stock.symbol}</div>
+                        <div class="detail-meta">
+                          {#if stock.exchange}{stock.exchange}{/if}
+                          {#if stock.exchange && stock.industry} &middot; {/if}
+                          {#if stock.industry}{stock.industry}{/if}
+                          {#if stock.country} &middot; {stock.country}{/if}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="detail-links">
+                      {#if stock.weburl}
+                        <a href={stock.weburl} target="_blank" rel="noopener">Company Website</a>
+                      {/if}
+                      <a href="https://finance.yahoo.com/quote/{stock.symbol}" target="_blank" rel="noopener">Yahoo Finance</a>
+                      <a href="https://www.google.com/finance/quote/{stock.symbol}:NASDAQ" target="_blank" rel="noopener">Google Finance</a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{/if}
+
 <style>
   .table-wrap {
     overflow-x: auto;
@@ -139,6 +216,10 @@
   .symbol {
     font-weight: 600;
     color: var(--accent);
+  }
+
+  .benchmark-symbol {
+    color: var(--text-secondary);
   }
 
   .sector {
@@ -211,5 +292,30 @@
 
   .detail-links a:hover {
     text-decoration: underline;
+  }
+
+  .benchmark-section {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 2px solid var(--border);
+  }
+
+  .benchmark-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .benchmark-header h3 {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+
+  .benchmark-note {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    font-style: italic;
   }
 </style>
