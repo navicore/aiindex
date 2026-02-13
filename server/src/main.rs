@@ -49,6 +49,10 @@ async fn main() {
             axum::routing::get(routes::get_stock),
         )
         .route("/api/sectors", axum::routing::get(routes::get_sectors))
+        .route(
+            "/api/benchmarks/history",
+            axum::routing::get(routes::get_benchmark_history),
+        )
         .route("/api/config", axum::routing::get(routes::get_config))
         .with_state(state);
 

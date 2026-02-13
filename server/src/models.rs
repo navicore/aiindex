@@ -112,6 +112,13 @@ pub struct SectorSummary {
     pub avg_change_pct: f64,
 }
 
+/// A single price point for benchmark history.
+#[derive(Debug, Clone, Serialize)]
+pub struct BenchmarkPricePoint {
+    pub price: f64,
+    pub timestamp: String,
+}
+
 /// Config info returned by /api/config.
 #[derive(Debug, Serialize)]
 pub struct ConfigInfo {
