@@ -1,3 +1,5 @@
+# This workflow ONLY calls `just` commands.
+# The justfile is the source of truth — do not duplicate build logic here.
 name: CI
 
 on:
@@ -7,26 +9,30 @@ on:
     branches: [main]
 
 jobs:
-  rust:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt -- --check
-      - run: cargo clippy -- -D warnings
-      - run: cargo test
 
-  pwa:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: pwa/package-lock.json
-      - run: cd pwa && npm ci
-      - run: cd pwa && npm run build
+          node-version: '22'
+
+      - uses: extractions/setup-just@v2
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - run: just ci

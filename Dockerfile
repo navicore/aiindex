@@ -7,12 +7,13 @@ COPY pwa/ ./
 RUN npm run build
 
 # Stage 2: Build Rust server
-FROM rust:1.85-bookworm AS server-build
+FROM rust:1.93-bookworm AS server-build
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
+COPY rust-toolchain.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY server/ server/
 COPY stocks.toml .
-RUN cargo build --release
+RUN cargo build --locked --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
